@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MatMul Performance Dashboard — Qualcomm AI100</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #ffffff; color: #1e293b; min-height: 100vh; }
+
+  .header {
+    background: linear-gradient(135deg, #f8fafc, #ffffff);
+    border-bottom: 1px solid #e2e8f0;
+    padding: 28px 40px;
+  }
+  .header h1 {
+    font-size: 24px; font-weight: 700;
+    background: linear-gradient(90deg, #6366f1, #8b5cf6, #ec4899);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .header p { font-size: 13px; color: #64748b; margin-top: 4px; }
+
+  .filters {
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 20px 40px;
+    display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-end;
+  }
+  .filter-group { display: flex; flex-direction: column; gap: 8px; }
+  .filter-group label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+  .chip-group { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    cursor: pointer; border: 1px solid #cbd5e1; background: #ffffff; color: #64748b;
+    transition: all 0.15s;
+  }
+  .chip:hover { border-color: #6366f1; color: #6366f1; }
+  .chip.active { background: #6366f1; border-color: #6366f1; color: #fff; }
+  .chip.active.green  { background: #10b981; border-color: #10b981; }
+  .chip.active.orange { background: #f59e0b; border-color: #f59e0b; }
+  .chip.active.pink   { background: #ec4899; border-color: #ec4899; }
+
+  .reset-btn {
+    padding: 8px 18px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    cursor: pointer; border: 1px solid #cbd5e1; background: #ffffff; color: #64748b;
+    transition: all 0.15s; margin-top: 22px;
+  }
+  .reset-btn:hover { border-color: #ef4444; color: #ef4444; }
+
+  .content { padding: 32px 40px; }
+
+  .summary-bar {
+    display: flex; gap: 16px; margin-bottom: 28px; flex-wrap: wrap;
+  }
+  .stat-card {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
+    padding: 16px 20px; min-width: 160px; flex: 1;
+  }
+  .stat-card .label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .stat-card .value { font-size: 22px; font-weight: 700; color: #1e293b; }
+  .stat-card .unit  { font-size: 12px; color: #94a3b8; margin-left: 4px; }
+
+  .section-title {
+    font-size: 13px; font-weight: 700; color: #64748b;
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 14px; margin-top: 28px;
+  }
+
+  .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid #e2e8f0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { background: #f8fafc; }
+  thead th {
+    padding: 12px 14px; text-align: left; font-size: 11px; font-weight: 700;
+    color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px;
+    border-bottom: 1px solid #e2e8f0; white-space: nowrap;
+    cursor: pointer; user-select: none;
+  }
+  thead th:hover { color: #6366f1; }
+  thead th.sorted { color: #6366f1; }
+  thead th .sort-arrow { margin-left: 4px; opacity: 0.5; }
+  thead th.sorted .sort-arrow { opacity: 1; }
+
+  tbody tr { border-bottom: 1px solid #f1f5f9; transition: background 0.1s; }
+  tbody tr:hover { background: #f8fafc; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody td { padding: 11px 14px; color: #334155; white-space: nowrap; }
+
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+  }
+  .badge-compute   { background: #dcfce7; color: #15803d; }
+  .badge-bandwidth { background: #dbeafe; color: #1d4ed8; }
+  .badge-overhead  { background: #ffedd5; color: #c2410c; }
+  .badge-unknown   { background: #f1f5f9; color: #64748b; }
+
+  .bar-cell { display: flex; align-items: center; gap: 8px; }
+  .mini-bar { height: 6px; border-radius: 3px; min-width: 4px; }
+  .bar-hmx    { background: #6366f1; }
+  .bar-dma    { background: #06b6d4; }
+  .bar-sync   { background: #ef4444; }
+  .bar-vtcm   { background: #10b981; }
+  .bar-imb    { background: #f59e0b; }
+
+  .val-good    { color: #15803d; font-weight: 600; }
+  .val-warn    { color: #c2410c; font-weight: 600; }
+  .val-bad     { color: #dc2626; font-weight: 600; }
+  .val-neutral { color: #334155; }
+
+  .straggler-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700;
+  }
+  .strag-none     { background: #dcfce7; color: #15803d; }
+  .strag-warning  { background: #ffedd5; color: #c2410c; }
+  .strag-critical { background: #fee2e2; color: #dc2626; }
+
+  .no-results {
+    text-align: center; padding: 60px 20px; color: #94a3b8;
+    font-size: 15px;
+  }
+
+  .tooltip-wrap { position: relative; display: inline-block; }
+  .tooltip-wrap:hover .tooltip { display: block; }
+  .tooltip {
+    display: none; position: absolute; bottom: 120%; left: 50%; transform: translateX(-50%);
+    background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+    padding: 8px 12px; font-size: 12px; color: #f1f5f9; white-space: nowrap;
+    z-index: 100; pointer-events: none;
+  }
+
+  @media (max-width: 768px) {
+    .filters { padding: 16px 20px; }
+    .content { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>MatMul Performance Dashboard — Qualcomm AI100</h1>
+  <p>Weight shape: [H × 11008] &nbsp;|&nbsp; mxfp6=true &nbsp;|&nbsp; batch=1 &nbsp;|&nbsp; 16 cores/device where applicable</p>
+</div>
+
+<div class="filters">
+  <div class="filter-group">
+    <label>Hidden Size</label>
+    <div class="chip-group" id="filter-hidden">
+      <div class="chip active green" data-val="4096">H=4096</div>
+      <div class="chip active green" data-val="7168">H=7168</div>
+    </div>
+  </div>
+
+  <div class="filter-group">
+    <label>Sequence Length</label>
+    <div class="chip-group" id="filter-seq">
+      <div class="chip active orange" data-val="1">seq=1</div>
+      <div class="chip active orange" data-val="128">seq=128</div>
+      <div class="chip active orange" data-val="512">seq=512</div>
+      <div class="chip active orange" data-val="1024">seq=1024</div>
+    </div>
+  </div>
+
+  <div class="filter-group">
+    <label>Configuration</label>
+    <div class="chip-group" id="filter-config">
+      <div class="chip active pink" data-val="1dev-16core">1dev 16core</div>
+      <div class="chip active pink" data-val="1dev-1core">1dev 1core</div>
+      <div class="chip active pink" data-val="4dev-16core">4dev 16core</div>
+    </div>
+  </div>
+
+  <div class="filter-group">
+    <label>Bottleneck</label>
+    <div class="chip-group" id="filter-bottleneck">
+      <div class="chip active" data-val="COMPUTE-BOUND">Compute</div>
+      <div class="chip active" data-val="BANDWIDTH-BOUND">Bandwidth</div>
+      <div class="chip active" data-val="OVERHEAD-BOUND">Overhead</div>
+      <div class="chip active" data-val="UNKNOWN">Unknown</div>
+    </div>
+  </div>
+
+  <button class="reset-btn" onclick="resetFilters()">Reset All</button>
+</div>
+
+<div class="content">
+  <div class="summary-bar" id="summary-bar"></div>
+  <div class="section-title" id="result-count"></div>
+  <div class="table-wrap">
+    <table id="main-table">
+      <thead>
+        <tr>
+          <th onclick="sortBy('config')" class="sorted" data-col="config">Config <span class="sort-arrow">▲</span></th>
+          <th onclick="sortBy('hidden')">Hidden <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('seq')">Seq <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('exec_us')">ExecTime(µs) <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('tflops')">TFLOPS <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('hmx')">HMX% <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('ddr_bw')">DDR BW(GB/s) <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('ddr_mb')">DDR MB <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('core_imb')">Core Imb% <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('vtcm')">VTCM% <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('compute_pct')">Compute% <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('sync_pct')">Sync% <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('bottleneck')">Verdict <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('dev_outliers')">Dev Outliers <span class="sort-arrow">↕</span></th>
+          <th onclick="sortBy('op_outliers')">Op Outliers <span class="sort-arrow">↕</span></th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+  <div id="no-results" class="no-results" style="display:none">No results match the selected filters.</div>
+</div>
+
+<script>
+const RAW = [
+  // config, hidden, seq, exec_us, tflops, hmx, ddr_bw, ddr_mb, core_imb, vtcm, compute_pct, sync_pct, bottleneck, dev_outliers, op_outliers
+  ["1dev-16core", 4096,    1,    375.908,   0.24,  13.4,  87.4,  33.6,  12.4,  31.2,  6.8,  78.0, "BANDWIDTH-BOUND",  0,  0],
+  ["1dev-1core",  4096,    1,   1957.568,   0.05,  30.5,  16.8,  33.6,   0.0,  56.9, 17.8,  36.6, "BANDWIDTH-BOUND",  0,  0],
+  ["4dev-16core", 4096,    1,     91.432,   0.99,   8.0,  93.4,  33.7,  26.0,  26.2,  3.9,  82.1, "OVERHEAD-BOUND",   1,  0],
+  ["1dev-16core", 4096,  128,    504.587,  22.88,  35.5,  65.1,  33.6,  10.7,  52.3, 18.5,  63.9, "BANDWIDTH-BOUND",  0,  0],
+  ["1dev-1core",  4096,  128,   3929.801,   2.94,  59.4,   9.3,  37.3,   0.0,  77.7, 26.8,  43.5, "COMPUTE-BOUND",    0,  0],
+  ["4dev-16core", 4096,  128,    453.210,  25.47,  46.7,  40.8,  40.4,  68.5,  63.4, 22.4,  53.4, "BANDWIDTH-BOUND",  5, 19],
+  ["1dev-16core", 4096,  512,   1029.248,  44.86,  70.0,  46.1,  48.4,   9.5,  75.6, 36.5,  37.0, "COMPUTE-BOUND",    0,  0],
+  ["1dev-1core",  4096,  512,  15130.072,   3.05,  82.0,   4.6,  70.1,   0.0,  77.8, 30.7,  57.2, "COMPUTE-BOUND",    0,  0],
+  ["4dev-16core", 4096,  512,   1255.166,  36.78,  56.6,  25.6,  65.8,  73.7,  72.1, 29.2,  52.3, "COMPUTE-BOUND",    6,  0],
+  ["1dev-16core", 4096, 1024,  10884.746,   8.48,  27.5,  59.7, 665.1,  11.1,  46.2, 13.4,  84.9, "BANDWIDTH-BOUND",  0,  0],
+  ["1dev-1core",  4096, 1024,  36281.159,   2.55,  73.3,   8.6, 318.0,   0.0,  69.1, 29.3,  64.9, "COMPUTE-BOUND",    0,  0],
+  ["4dev-16core", 4096, 1024,   2775.664,  33.27,  64.3,  26.5, 130.2,  77.4,  70.2, 32.4,  55.3, "COMPUTE-BOUND",    8, 20],
+  ["1dev-16core", 7168,    1,    647.393,   0.24,  12.9,  88.8,  58.8,  25.0,  30.7,  6.4,  79.4, "BANDWIDTH-BOUND",  0,  0],
+  ["1dev-1core",  7168,    1,   3139.189,   0.05,  31.0,  18.4,  58.8,   0.0,  58.7, 16.6,  37.5, "BANDWIDTH-BOUND",  0,  0],
+  ["4dev-16core", 7168,    1,    151.169,   1.04,   8.8,  97.7,  58.9,  20.3,  30.4,  4.3,  79.5, "OVERHEAD-BOUND",   2,  4],
+  ["1dev-16core", 7168,  128,    927.673,  21.77,  32.8,  72.2,  68.5,  25.8,  44.7, 17.1,  69.0, "BANDWIDTH-BOUND",  0,  0],
+  ["1dev-1core",  7168,  128,   6573.721,   3.07,  66.8,   9.4,  63.3,   0.0,  77.7, 27.4,  37.4, "COMPUTE-BOUND",    0,  0],
+  ["4dev-16core", 7168,  128,    556.930,  36.27,  59.9,  50.1,  68.6,  62.3,  63.1, 29.9,  43.2, "COMPUTE-BOUND",    6,  7],
+  ["1dev-16core", 7168,  512,   2057.529,  39.27,  81.5,  36.4,  76.6,   3.8,  84.0, 35.4,  42.1, "COMPUTE-BOUND",    0,  0],
+  ["1dev-1core",  7168,  512,  34566.647,   2.34,  67.6,  11.6, 409.1,   0.0,  61.8, 28.0,  65.1, "COMPUTE-BOUND",    0,  0],
+  ["4dev-16core", 7168,  512,   1651.742,  48.92,  70.8,  26.8, 103.1,  59.5,  81.4, 31.3,  50.6, "COMPUTE-BOUND",    5, 20],
+  ["1dev-16core", 7168, 1024,   6192.122,  26.10,  61.3,  15.2,  95.5,   1.0,  81.4, 25.6,  57.0, "COMPUTE-BOUND",    0,  0],
+  ["1dev-1core",  7168, 1024,  80579.974,   2.01,  58.0,  12.0, 993.6,   0.0,  57.3, 23.8,  72.7, "COMPUTE-BOUND",    0,  0],
+  ["4dev-16core", 7168, 1024,   3647.171,  44.31,  80.5,  19.8, 179.5,  58.2,  84.5, 35.2,  54.4, "COMPUTE-BOUND",    6, 20],
+];
+
+const COLS = ["config","hidden","seq","exec_us","tflops","hmx","ddr_bw","ddr_mb","core_imb","vtcm","compute_pct","sync_pct","bottleneck","dev_outliers","op_outliers"];
+
+let sortCol = "config", sortAsc = true;
+let activeFilters = {
+  hidden:     new Set(["4096","7168"]),
+  seq:        new Set(["1","128","512","1024"]),
+  config:     new Set(["1dev-16core","1dev-1core","4dev-16core"]),
+  bottleneck: new Set(["COMPUTE-BOUND","BANDWIDTH-BOUND","OVERHEAD-BOUND","UNKNOWN"]),
+};
+
+function toObj(r) {
+  const o = {};
+  COLS.forEach((c,i) => o[c] = r[i]);
+  return o;
+}
+
+function getFiltered() {
+  return RAW.map(toObj).filter(r =>
+    activeFilters.hidden.has(String(r.hidden)) &&
+    activeFilters.seq.has(String(r.seq)) &&
+    activeFilters.config.has(r.config) &&
+    activeFilters.bottleneck.has(r.bottleneck)
+  );
+}
+
+function verdictBadge(v) {
+  if (v.includes("COMPUTE"))   return `<span class="badge badge-compute">Compute</span>`;
+  if (v.includes("BANDWIDTH")) return `<span class="badge badge-bandwidth">Bandwidth</span>`;
+  if (v.includes("OVERHEAD"))  return `<span class="badge badge-overhead">Overhead</span>`;
+  return `<span class="badge badge-unknown">Unknown</span>`;
+}
+
+function barCell(val, max, cls, decimals=1) {
+  if (val === null || val === undefined) return '<span style="color:#475569">N/A</span>';
+  const w = Math.max(4, Math.round((val / max) * 80));
+  return `<div class="bar-cell"><div class="mini-bar ${cls}" style="width:${w}px"></div><span>${val.toFixed(decimals)}</span></div>`;
+}
+
+function colorVal(val, good_low, warn_high, decimals=1) {
+  if (val === null || val === undefined) return 'N/A';
+  const s = val.toFixed(decimals);
+  if (val <= good_low)  return `<span class="val-good">${s}</span>`;
+  if (val <= warn_high) return `<span class="val-warn">${s}</span>`;
+  return `<span class="val-bad">${s}</span>`;
+}
+
+function colorValHigh(val, good_high, warn_low, decimals=1) {
+  if (val === null || val === undefined) return 'N/A';
+  const s = val.toFixed(decimals);
+  if (val >= good_high) return `<span class="val-good">${s}</span>`;
+  if (val >= warn_low)  return `<span class="val-warn">${s}</span>`;
+  return `<span class="val-bad">${s}</span>`;
+}
+
+function stragglerBadge(count, label) {
+  if (count === 0) return `<span class="straggler-badge strag-none">✓ 0</span>`;
+  if (count <= 3)  return `<span class="straggler-badge strag-warning">⚠ ${count}</span>`;
+  return `<span class="straggler-badge strag-critical">✗ ${count}</span>`;
+}
+
+function configBadge(c) {
+  const colors = {"1dev-16core":"#4f46e5","1dev-1core":"#d97706","4dev-16core":"#059669"};
+  const col = colors[c] || "#64748b";
+  return `<span style="color:${col};font-weight:700">${c}</span>`;
+}
+
+function render() {
+  let data = getFiltered();
+
+  // sort
+  data.sort((a,b) => {
+    let av = a[sortCol], bv = b[sortCol];
+    if (typeof av === "string") av = av.toLowerCase();
+    if (typeof bv === "string") bv = bv.toLowerCase();
+    return sortAsc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+  });
+
+  // summary stats
+  const execVals  = data.map(r=>r.exec_us).filter(Boolean);
+  const tflopsVals= data.map(r=>r.tflops).filter(Boolean);
+  const hmxVals   = data.map(r=>r.hmx).filter(Boolean);
+  const imbVals   = data.map(r=>r.core_imb).filter(v=>v!==null);
+  document.getElementById("result-count").textContent =
+    `Showing ${data.length} of ${RAW.length} configurations`;
+
+  const sb = document.getElementById("summary-bar");
+  sb.innerHTML = `
+    <div class="stat-card">
+      <div class="label">Best TFLOPS</div>
+      <div class="value">${tflopsVals.length ? Math.max(...tflopsVals).toFixed(2) : "—"}<span class="unit">T</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Best Latency</div>
+      <div class="value">${execVals.length ? Math.min(...execVals).toFixed(1) : "—"}<span class="unit">µs</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Avg HMX%</div>
+      <div class="value">${hmxVals.length ? (hmxVals.reduce((a,b)=>a+b,0)/hmxVals.length).toFixed(1) : "—"}<span class="unit">%</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Max Core Imbalance</div>
+      <div class="value">${imbVals.length ? Math.max(...imbVals).toFixed(1) : "—"}<span class="unit">%</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Configs Shown</div>
+      <div class="value">${data.length}<span class="unit">/ ${RAW.length}</span></div>
+    </div>
+  `;
+
+  const tbody = document.getElementById("table-body");
+  const noRes = document.getElementById("no-results");
+
+  if (data.length === 0) {
+    tbody.innerHTML = "";
+    noRes.style.display = "block";
+    return;
+  }
+  noRes.style.display = "none";
+
+  tbody.innerHTML = data.map(r => `
+    <tr>
+      <td>${configBadge(r.config)}</td>
+      <td style="color:#a5b4fc;font-weight:600">${r.hidden}</td>
+      <td style="color:#f0abfc;font-weight:600">${r.seq}</td>
+      <td>${barCell(r.exec_us, 90000, "bar-sync", 0)}</td>
+      <td>${colorValHigh(r.tflops, 40, 10, 2)}</td>
+      <td>${barCell(r.hmx, 100, "bar-hmx")}</td>
+      <td>${barCell(r.ddr_bw, 100, "bar-dma")}</td>
+      <td>${colorVal(r.ddr_mb, 100, 400, 1)}</td>
+      <td>${colorVal(r.core_imb, 15, 50)}</td>
+      <td>${barCell(r.vtcm, 100, "bar-vtcm")}</td>
+      <td>${barCell(r.compute_pct, 100, "bar-hmx")}</td>
+      <td>${barCell(r.sync_pct, 100, "bar-sync")}</td>
+      <td>${verdictBadge(r.bottleneck)}</td>
+      <td>${stragglerBadge(r.dev_outliers, "dev")}</td>
+      <td>${stragglerBadge(r.op_outliers,  "op")}</td>
+    </tr>
+  `).join("");
+}
+
+function sortBy(col) {
+  if (sortCol === col) sortAsc = !sortAsc;
+  else { sortCol = col; sortAsc = true; }
+  document.querySelectorAll("thead th").forEach(th => {
+    th.classList.remove("sorted");
+    th.querySelector(".sort-arrow").textContent = "↕";
+  });
+  const idx = ["config","hidden","seq","exec_us","tflops","hmx","ddr_bw","ddr_mb","core_imb","vtcm","compute_pct","sync_pct","bottleneck","dev_outliers","op_outliers"].indexOf(col);
+  const ths = document.querySelectorAll("thead th");
+  if (ths[idx]) {
+    ths[idx].classList.add("sorted");
+    ths[idx].querySelector(".sort-arrow").textContent = sortAsc ? "▲" : "▼";
+  }
+  render();
+}
+
+// chip toggle
+["filter-hidden","filter-seq","filter-config","filter-bottleneck"].forEach(id => {
+  const key = id.replace("filter-","");
+  document.getElementById(id).querySelectorAll(".chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      const val = chip.dataset.val;
+      if (activeFilters[key].has(val)) {
+        if (activeFilters[key].size === 1) return; // keep at least one
+        activeFilters[key].delete(val);
+        chip.classList.remove("active");
+      } else {
+        activeFilters[key].add(val);
+        chip.classList.add("active");
+      }
+      render();
+    });
+  });
+});
+
+function resetFilters() {
+  activeFilters = {
+    hidden:     new Set(["4096","7168"]),
+    seq:        new Set(["1","128","512","1024"]),
+    config:     new Set(["1dev-16core","1dev-1core","4dev-16core"]),
+    bottleneck: new Set(["COMPUTE-BOUND","BANDWIDTH-BOUND","OVERHEAD-BOUND","UNKNOWN"]),
+  };
+  document.querySelectorAll(".chip").forEach(c => c.classList.add("active"));
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
