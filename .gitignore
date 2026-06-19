@@ -1,9 +1,33 @@
+# Results and profiling data
 results/
 tiler_results/
 tiled_runner_work/
 sweep_results/
-__pycache__/
-*.pyc
+
+# Compiler dump logs
+QAicGraph__*.log
+dbg.log
+module_inst_counts*.log
+
+# Benchmark artifact directories
+matmul_kimi*/
+mlp_microbenchmark/
+mlp_results/
+gqa_*/
+kv_dist_experiment/
+flash_attn_jit/
+dot_graphs/
+ntile_*/
+seq_len_sweep/
+tiling_test_s512/
+
+# Generated files
 *.onnx
 *.onnxweights.data
+*.npz
+*.raw
+*.bin
+*.pyc
+__pycache__/
 dumps/
+this
